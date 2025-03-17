@@ -4,5 +4,5 @@ services:
   app1:
     command: ["node", "--inspect=0.0.0.0:9229", "index.js"]
     ports:
-      - "9229:9229"
+      - "9229:9229" # Debugging port
       

@@ -20,6 +20,7 @@ services:
         condition: service_healthy
     ports:
       - "8000:8000"
+      - "9229:9229" # Debugging port for app1
     environment:
       - RABBITMQ_URL=amqp://rabbitmq
 
@@ -28,5 +29,7 @@ services:
     depends_on:
       rabbitmq:
         condition: service_healthy
+    ports:
+      - "9230:9229" # Debugging port for app2 (mapped to a different host port)
     environment:
       - RABBITMQ_URL=amqp://rabbitmq
