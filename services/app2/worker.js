@@ -1,62 +1,78 @@
 const amqp = require("amqplib");
-const fs = require("fs");
-const { uploadToS3 } = require("./s3Uploader");
+const AWS = require("aws-sdk");
 const { RABBITMQ_URL, QUEUE_NAME } = require("./config");
 
-async function generateLargeFile(filePath, fileSize) {
+// Configure LocalStack S3
+const s3 = new AWS.S3({
+  endpoint: "http://localhost:4566", // LocalStack S3 URL (e.g., http://localhost:4566)
+  s3ForcePathStyle: true,
+  accessKeyId: "test", // Default for LocalStack
+  secretAccessKey: "test", // Default for LocalStack
+});
+
+async function uploadStreamToS3(bucket, key, fileSize) {
   return new Promise((resolve, reject) => {
-    const stream = fs.createWriteStream(filePath);
+    console.log("Proceed to s3");
+    
+    const passThrough = new require("stream").PassThrough();
     const buffer = Buffer.alloc(1024 * 1024); // 1MB chunk
     let written = 0;
 
-    const startTime = process.hrtime(); // Start time for copy
+    const uploadParams = {
+      Bucket: bucket,
+      Key: key,
+      Body: passThrough,
+    };
+    console.log("Before upload");
+    
+    s3.upload(uploadParams, (err, data) => {
+      if (err) return reject(err);
+      resolve(data);
+    });
+    console.log("After upload");
 
-    function write() {
+    function writeChunk() {
       while (written < fileSize * 1024 * 1024 * 1024) {
-        if (!stream.write(buffer)) break;
+        if (!passThrough.write(buffer)) break;
         written += buffer.length;
       }
       if (written < fileSize * 1024 * 1024 * 1024) {
-        stream.once("drain", write);
+        passThrough.once("drain", writeChunk);
       } else {
-        stream.end();
-        const endTime = process.hrtime(startTime); // End time for copy
-        resolve(endTime);
+        passThrough.end();
       }
     }
-    write();
+
+    writeChunk();
   });
 }
 
 async function startWorker() {
-  console.log('Started');
-  
+  console.log("Started");
+
   const conn = await amqp.connect(RABBITMQ_URL);
   const channel = await conn.createChannel();
-  await channel.assertQueue("file_upload_queue", { durable: true });
+  await channel.assertQueue(QUEUE_NAME, { durable: true });
 
   console.log("Worker is waiting for tasks...");
 
-  channel.consume("file_upload_queue", async (msg) => {
-    console.log('Request received=========');
-    
+  channel.consume(QUEUE_NAME, async (msg) => {
+    console.log("Request received=========");
+
     const task = JSON.parse(msg.content.toString());
-    const filePath = `/tmp/file_${task.fileIndex}.bin`;
+    const key = `file_${task.fileIndex}.bin`;
 
     console.log(`Processing file ${task.fileIndex}`);
 
-    // Measure file generation time
-    const timeToCopy = await generateLargeFile(filePath, task.fileSize);
-    console.log(`File ${task.fileIndex} generated in ${timeToCopy[0]}s ${timeToCopy[1] / 1e9}ms`);
+    // **Upload Directly to LocalStack S3**
+    const startTime = process.hrtime();
+    await uploadStreamToS3(task.s3Destination, key, task.fileSize);
+    const endTime = process.hrtime(startTime);
 
-    const uploadStartTime = process.hrtime(); // Start time for upload
-    await uploadToS3(filePath, task.s3Destination, `file_${task.fileIndex}.bin`);
-    const uploadEndTime = process.hrtime(uploadStartTime); // End time for upload
+    console.log(`File ${task.fileIndex} uploaded successfully.`);
 
-    console.log(`File ${task.fileIndex} uploaded.`);
-
-    // **Calculate Final Metrics**
-    const totalCopyTime = timeToCopy[0] + timeToCopy[1] / 1e9; // Convert to seconds
+    // **Calculate Metrics**
+    const totalCopyTime = endTime[0] + endTime[1] / 1e9; // Convert to seconds
     const fileSizeCreated = task.fileSize; // in GB
     const copySpeed = fileSizeCreated / totalCopyTime; // in GBps
 

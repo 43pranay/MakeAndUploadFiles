@@ -1,24 +1,23 @@
 const AWS = require("aws-sdk");
-const fs = require("fs");
 
-AWS.config.update({
-  accessKeyId: process.env.AWS_ACCESS_KEY,
-  secretAccessKey: process.env.AWS_SECRET_KEY,
-  region: process.env.AWS_REGION || "us-east-1",
+const s3 = new AWS.S3({
+  endpoint: "http://localhost:4566", // LocalStack URL
+  s3ForcePathStyle: true,  // Required for LocalStack
+  accessKeyId: "test",  // Dummy credentials
+  secretAccessKey: "test",  // Dummy credentials
+  region: "us-east-1"
 });
 
-const s3 = new AWS.S3();
+async function uploadToS3(filePath, bucketName, fileName) {
+  const fileContent = require("fs").readFileSync(filePath);
 
-async function uploadToS3(filePath, bucketName, key) {
-  const fileStream = fs.createReadStream(filePath);
-
-  const params = {
+  await s3.upload({
     Bucket: bucketName,
-    Key: key,
-    Body: fileStream,
-  };
+    Key: fileName,
+    Body: fileContent
+  }).promise();
 
-  return s3.upload(params).promise();
+  console.log(`✅ File uploaded to LocalStack S3: ${bucketName}/${fileName}`);
 }
 
 module.exports = { uploadToS3 };

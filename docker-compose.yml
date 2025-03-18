@@ -1,6 +1,17 @@
 version: "3.8"
 
 services:
+  localstack:
+    image: localstack/localstack
+    container_name: localstack
+    ports:
+      - "4566:4566"  # LocalStack API gateway
+    environment:
+      - SERVICES=s3
+      - DEFAULT_REGION=us-east-1
+      - DEBUG=1
+    volumes:
+      - "/var/run/docker.sock:/var/run/docker.sock"
   rabbitmq:
     image: "rabbitmq:3-management"
     container_name: rabbitmq
@@ -33,3 +44,4 @@ services:
       - "9230:9229" # Debugging port for app2 (mapped to a different host port)
     environment:
       - RABBITMQ_URL=amqp://rabbitmq
+      - NODE_OPTIONS=--max-old-space-size=4096  # 4GB memory limit for Node.js
